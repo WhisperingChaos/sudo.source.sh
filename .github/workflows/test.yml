@@ -11,5 +11,5 @@ jobs:
     - uses: actions/checkout@v2
     - name: Configure Test 
       run: |
-          echo hi,
+          cd ./test,
           echo bye
