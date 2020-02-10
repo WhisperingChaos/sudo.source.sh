@@ -39,20 +39,22 @@
 #		  simple reversion without having to change code if this implementation
 #		  is found problematic.
 #
-#	In
-#		- nothing - Just elongate sudo grace period
-#   - $1-$N   - Run & elongate sudo grace period
+#	In:
+#		- If account not currently in sudo grace period, expect command line prompt
+#		  for account password.
+#		- nothing - Just elongate sudo grace period.
+#   - $1-$N   - Run command & elongate sudo grace period.
 #
-#	Out
+#	Out:
 #		- When successful & command - mirrors output of command
-#		- When successful & no comand - no output  
+#		- When successful & no comand - no output
+#		- When unsuccessful potentially message on STDERR  
 #
 ###############################################################################
 sudo_elevate(){
 	local -r command="$1"
 
 	if ! sudo__elongate >/dev/null && ! sudo__elongate_prompt; then
-		sudo__elevate_message_fail
 		return 1
   fi
 
@@ -64,7 +66,7 @@ sudo_elevate(){
 }
 # used to trigger periodic elongation of sudo grace period. Due to resolution
 # concerns, would not reduce this value below 2 seconds.  Use SOLID principles
-# override value.
+# to override value.
 declare -gi sudo__GRACE_TRIGGER_HEARTBEAT_SEC=2
 ###############################################################################
 #
@@ -74,19 +76,28 @@ declare -gi sudo__GRACE_TRIGGER_HEARTBEAT_SEC=2
 #		periodically elongates grace period in child background process spawned
 #		from the process (parent) calling this function.
 #
+#	Assumes:
+#		- Linux OS will enfore timing to a precision such that a process scheduled
+#		  nearly before a second one will always, under at least most conditions,
+#		  execute before the second one.
+#		- Precision/resolution to a second.
+#		- Execution time between calculating a timer duration and starting the
+#		  timer ticking is no more than 1 second.
+#
 #	Notes:
 #		- Periodic timer isn't created at all when:
-#		  - sudo and pkexec require a privilege (password) prompt for every
-#		    elevation request. 
-#		  - sudo and pkexec can infinitely extend grace period.
-#		- Recommend using this function.  Instead use 'sudo_elevate'.  This function
-#		  'sudo_elevate_periodic_timer' can be seamlessly added to an existing
-#		  script that employs granular 'sudo' commands in its implementation.  This 
-#		  strategy permits the developer to continue directly encoding sudo commands
-#		  allowing simple removal of this function without having to change code
-#		  if its implementation is found problematic.
+#		  - sudo requires a privilege (password) prompt for every elevation request. 
+#		  - sudo configured to infinitely extend grace period.
+#		- Recommend using this function instead of 'sudo_elevate', as it can be 
+#		  seamlessly added to an existing script that employs granular 'sudo'
+#		  commands in its implementation.  This strategy permits a developer to
+#		  continue directly encoding sudo commands allowing simple removal of
+#		  this function without having to change code if its implementation is
+#		  found problematic.
 # 
 #	In
+#		- If account not currently in sudo grace period, expect sudo to produce
+#		  command line prompt for account password.
 #		- sudo__GRACE_TRIGGER_HEARTBEAT_SEC specifies the interval before the
 #		  expiration of the grace period when the grace period will be reset
 #		  to elongate the elevated session.
@@ -95,6 +106,7 @@ declare -gi sudo__GRACE_TRIGGER_HEARTBEAT_SEC=2
 #		     known, but is within this value or there is a desire to agressively
 #			   reset the grace interval.  Measured in minutes and fractional 
 #			   minutes specified in decimal notation (same as timestamp_timeout).
+#        Ex. grace period of 5min and 30sec: timestamp_timeout=5.5
 #
 #	Out
 #		- When successful, unnecessary, or not applicable - no output.
@@ -137,7 +149,8 @@ sudo_elevate_periodic_timer(){
 		sudo__timer_resolution_unstable $sudo__GRACE_TRIGGER_HEARTBEAT_SEC
 		return 1
 	fi  
-  # start background subprocess to periodically renew sudo grace period before it expires
+  # run sudo_elevate to help background process start before grace period expires
+	# due to executing code since last grace period reset.
 	if ! sudo_elevate; then
 		return 1
 	fi
@@ -162,14 +175,6 @@ sudo__elongate_prompt(){
 sudo__execute(){
 
 	sudo $@
-}
-
-sudo__elevate_message_fail(){
-
-  cat >&2 <<SUDO_ELEVATE_MESSAGE_FAIL
-
-Error: sudo privilege escalation failed.
-SUDO_ELEVATE_MESSAGE_FAIL
 }
 
 sudo__grace_periodic_get_fail(){
@@ -198,13 +203,13 @@ sudo__elevate_heartbeat(){
 	local -ri parentPollPID=$!
 	local -i gracePollPID
 	while true; do
+		sudo__elongate >/dev/null
 		sleep ${graceIntervalSec}s >/dev/null &
 		gracePollPID=$!
 		wait -n $parentPollPID $gracePollID >/dev/null
 		if ! kill -0 $parentPID >/dev/null 2>/dev/null; then
 			break
 		fi
-		sudo__elongate >/dev/null
 	done
 	kill $gracePollPID >/dev/null
 	kill $heartBeatPID >/dev/null
@@ -228,18 +233,21 @@ declare -gi sudo__grace_SUDOERS_GRACE_PERIOD_SYSTEM_DEFAULT_SEC=5*60
 #	Purpose:
 #		Obtain sudo command grace period, in seconds, for currently executing host.
 #
+# Assumes:
+#		- Grace period's resolution is at least a second.
+#
 #	Notes:
-#		- https://gratisoft.us/sudo/sudoers.man.html describes sudo file format
-#		  and grace period values.
-#		- sudo and pkexec can implement grace period policies on a per application
-#		  granularity that's beyond this ability of this script to support.
-#		- Since "timestamp_timeout" permits specifying a fractions of minutes
+#		- https://gratisoft.us/sudo/sudoers.man.html describes, in detail, sudo
+#		  file format and grace period values.
+#		- sudo can implement grace period policies on a per application
+#		  granularity that's beyond the ability of this script to support.
+#		- Since "timestamp_timeout" permits specifying a fractions of a minute
 #		  using decimal notation, the grace period will be calculated to a
 #		  truncated second.  Additionaly, given this understanding, the code
 #		  assumes the grace period's resolution to be at least a second. If
 #		  resolution is better than a second then this routine will always
-#		  return a grace period value that's always less than the actual due to
-#		  truncation to a second.
+#		  return a grace period value that's less than the actual one due to
+#		  truncation.
 #		
 # In:
 #		- $1 - The name of a variable to return the value of the grace period.
@@ -263,7 +271,6 @@ sudo__grace_period_get() {
 	if [ -z "$gpOut" ]; then 
 		return 1
 	fi
-
 	# see if override settings specified
 	if ! sudo_elevate test -f "$sudo__grace_SUDOERS_SETTINGS" >/dev/null; then
 		sudo__sudoers_settings_file_fail "$sudo__grace_SUDOERS_SETTINGS"
@@ -271,7 +278,6 @@ sudo__grace_period_get() {
 	fi
 
 	local -r sudoersOverrideSettingsDir=$(sudo__grace_override_dir_get "$sudo__grace_SUDOERS_SETTINGS")
-
 	local graceOveride
   if [ -n "$sudoersOverrideSettingsDir" ]; then
 		graceOveride=$(sudo__grace_period_override_get "$sudoersOverrideSettingsDir")
