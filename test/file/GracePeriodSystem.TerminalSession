@@ -1,0 +1,2 @@
+Defaults        env_reset, timestamp_timeout=-1
+# other junk that might be in file
