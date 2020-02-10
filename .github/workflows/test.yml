@@ -3,7 +3,7 @@ name: test
 on: [push]
 
 jobs:
-  build:
+  test:
 
     runs-on: ubuntu-latest
 
@@ -11,3 +11,6 @@ jobs:
     - uses: actions/checkout@v1
     - name: Configure
       run: cd ./test; ./config.sh;
+    - name: Run
+      run: cd ./test; ./sudo.source_test.sh;
+
