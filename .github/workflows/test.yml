@@ -9,11 +9,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    - name: configure test 
+    - name: Configure Test 
       run: |
-          cd ./test,
-          ./config.sh
-    - name: run the test.
-      run: |
-        cd ./test,
-        ./sudo.source_test.sh
+          echo hi,
+          echo bye
