@@ -111,8 +111,8 @@ test_graceperiod_reset(){
 	assert_true 'sudo__elongate'
 	# since grace period is specified in minutes and fractions of minutes 
 	# therefore its resolution should be at least to the second.  Ensure sleep
-	# executes at least after initial sudo_elevate has expired
-  # and before immediately previous sudo_elongate's grace period has expired.
+	# executes at after initial sudo_elevate has expired and before 
+  # immediately previous sudo_elongate's grace period has expired.
   test_pause $((gpRtn-gpTestTrigSec))
 	assert_true 'sudo__elongate'
 }
@@ -157,7 +157,7 @@ main(){
 	test_sudo__grace_override_dir_get
 	assert_return_code_child_failure_relay test_sudo_grace_period_get
 #	test_graceperiod_verify
-#	test_graceperiod_reset
+	test_graceperiod_reset
 	test_sudo_elevate_periodic_timer
 	assert_return_code_set
 }
