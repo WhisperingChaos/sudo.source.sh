@@ -51,7 +51,7 @@ test_sudo__grace_override_dir_get(){
 	assert_true '[ -z "$(sudo__grace_override_dir_get /dev/null)" ]'
 	assert_true '[ "/SudoersDir" == "$(sudo__grace_override_dir_get ./file/sudoers.d.Sudoers/SudoersFile)" ]'
 }
-cd 
+
 test_sudo_grace_period_get()(
 	assert_false 'sudo__grace_period_get'
 	declare -g sudo__grace_SUDOERS_SETTINGS=./file/etc/sudoers
@@ -155,7 +155,7 @@ main(){
 	test_grace_period_system_get
 	test_sudo__grace_period_override_get
 	test_sudo__grace_override_dir_get
-	assert_true	test_sudo_grace_period_get
+	assert_return_code_child_failure_relay test_sudo_grace_period_get
 #	test_graceperiod_verify
 #	test_graceperiod_reset
 	test_sudo_elevate_periodic_timer
