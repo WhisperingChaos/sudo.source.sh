@@ -56,11 +56,11 @@ sudo_elevate(){
 
 	if ! sudo__elongate >/dev/null && ! sudo__elongate_prompt; then
 		return 1
-  fi
+	fi
 
-  if [ -z "$command" ]; then
-    return
-  fi
+	if [ -z "$command" ]; then
+		return
+	fi
 
 	sudo__execute $@
 }
@@ -127,20 +127,20 @@ sudo_elevate_periodic_timer(){
 	if [ -z "$gracePeriodInMin" ] && ! sudo__grace_period_get 'gracePeriodSec'; then
 		sudo__grace_periodic_fail
 		return 1
-  fi
+	fi
 	local -r gracePeriodSec
 
-  if [ $gracePeriodSec -lt 0 ]; then
+	if [ $gracePeriodSec -lt 0 ]; then
 		# grace interval has been configured to last duration of current terminal
-    # session :: it never needs to be renewed.
+		# session :: it never needs to be renewed.
 		return
-  fi
+	fi
 
-  if [ $gracePeriodSec == 0 ]; then
+	if [ $gracePeriodSec == 0 ]; then
 		# grace interval is disabled - only lasts for a single command.  Periodic
 		# timer not applicable.
 		return
-  fi
+	fi
 	# subtract 1sec from grace period to ensure that when coupled to sleep's
 	# 1ms resolution and time required to execute commands to establish heartbeat,
 	# reset will almost always occur before grace period expires. 
@@ -149,11 +149,9 @@ sudo_elevate_periodic_timer(){
 		sudo__timer_resolution_unstable $sudo__GRACE_TRIGGER_HEARTBEAT_SEC
 		return 1
 	fi  
-  # run sudo_elevate to help background process start before grace period expires
-	# due to executing code since last grace period reset.
-	if ! sudo_elevate; then
-		return 1
-	fi
+	# assumes code above executes and startup of heartbeat requires no more than 
+	# 6 sec from previous sudo above as it's unlikely someone would set sudoers
+	# grace period >0 and < 0.1min.
 	sudo__elevate_heartbeat $$ $graceHeartbeatSec >/dev/null &
 }
 ###############################################################################
@@ -178,7 +176,7 @@ sudo__execute(){
 }
 
 sudo__grace_periodic_get_fail(){
-  cat >&2 <<SUDO__GRACE_PERIOD_PERIODIC_FAIL
+	cat >&2 <<SUDO__GRACE_PERIOD_PERIODIC_FAIL
 
 Error: Unable to determine grace period.
 SUDO__GRACE_PERIOD_PERIODIC_FAIL
@@ -187,7 +185,7 @@ SUDO__GRACE_PERIOD_PERIODIC_FAIL
 sudo__timer_resolution_unstable(){
 local -ri minHeartbeatResSec=$1
 
-  cat >&2 <<SUDO__TIMER_RESOLUTION_UNSTABLE
+	cat >&2 <<SUDO__TIMER_RESOLUTION_UNSTABLE
 
 Error: Timer resolution to trigger heartbeat renewal (validation) unstable.
   + sudo grace period is less than $minHeartbeatResSec seconds.
@@ -195,24 +193,33 @@ SUDO__TIMER_RESOLUTION_UNSTABLE
 }
 
 sudo__elevate_heartbeat(){
-	local -ri heartBeatPID=$!
 	local -ri parentPID=$1
-	local -ri graceIntervalSec="$2"
+	local -ri heartBeatIntervalSec="$2"
 
+	# ensure sysout nullified for every command, so it doesn't
+	# interfere with other processes read pipe STDOUT.  Although
+	# other mechanisms exist, like disown, maintaining the parent/child
+	#	relationship guarantees the spawned child processes will terminate
+	# at some future point, like when its parent process terminates,
+	# making the code more resilient to bugs which is especially important
+	# in this context to prevent 'forever' sudo.
+	# assumes grace period hasn't expired.
+	# assumes code execution from this point
+	# to executing "sleep" below is less than 1 sec.  Otherwise, first
+	# heartbeat will be triggered after grace period expires.
+	sudo__elongate >/dev/null
 	sudo_elevate_heartbeat_parent_poll $parentPID >/dev/null &
 	local -ri parentPollPID=$!
-	local -i gracePollPID
+	local -i heartBeatTriggerPID
 	while true; do
-		sudo__elongate >/dev/null
-		sleep ${graceIntervalSec}s >/dev/null &
-		gracePollPID=$!
-		wait -n $parentPollPID $gracePollID >/dev/null
+		sleep ${heartBeatIntervalSec}s >/dev/null &
+		heartBeatTriggerPID=$!
+		wait -n $parentPollPID $heartBeatTriggerPID >/dev/null
 		if ! kill -0 $parentPID >/dev/null 2>/dev/null; then
 			break
 		fi
+		sudo__elongate >/dev/null
 	done
-	kill $gracePollPID >/dev/null
-	kill $heartBeatPID >/dev/null
 }
 
 sudo_elevate_heartbeat_parent_poll(){
@@ -279,22 +286,22 @@ sudo__grace_period_get() {
 
 	local -r sudoersOverrideSettingsDir=$(sudo__grace_override_dir_get "$sudo__grace_SUDOERS_SETTINGS")
 	local graceOveride
-  if [ -n "$sudoersOverrideSettingsDir" ]; then
+	if [ -n "$sudoersOverrideSettingsDir" ]; then
 		graceOveride=$(sudo__grace_period_override_get "$sudoersOverrideSettingsDir")
-  fi
+	fi
 	local -r graceOveride
-  if [ -n "$graceOveride" ]; then
+	if [ -n "$graceOveride" ]; then
 		# override sudo grace period was specified
 		eval $gpOut\=\$graceOveride
-    return
-  fi
+		return
+	fi
 	# see if system level settings include override of default
 	local graceSystem=$(sudo__grace_period_system_get "$sudo__grace_SUDOERS_SETTINGS")
-  if [ -n "$graceSystem" ]; then
+	if [ -n "$graceSystem" ]; then
 		eval $gpOut\=\$graceSystem
 		return
 	fi
-  # nothing specified in settings, return known default
+	# nothing specified in settings, return known default
 	eval $gpOut\=sudo__grace_SUDOERS_GRACE_PERIOD_SYSTEM_DEFAULT_SEC
 }
 
@@ -332,7 +339,7 @@ sudo__grace_period_override_get(){
 	| grep -v '/'                                        \
  	| grep -v '.*\..*'                                   \
 	| grep -v '.*~'                                      \
-  | sudo__grace_sudoers_timeout_extract "$directory"   \
+	| sudo__grace_sudoers_timeout_extract "$directory"   \
 	| sudo__grace_period_extract_from_stream
 }
 
@@ -350,11 +357,11 @@ sudo__grace_sudoers_timeout_extract(){
 
 sudo__grace_sudoers_timeout_min(){
 
-  local	   gracePeriod
+	local	   gracePeriod
 	local -i timeoutSec
 	local -i timeoutLeastSec
 	local timeoutSpecified=false
-  while read -r gracePeriod; do
+	while read -r gracePeriod; do
 		if ! sudo__grace_period_timeout_to_sec "$gracePeriod" 'timeoutSec'; then
 			continue
 		fi
@@ -375,7 +382,7 @@ sudo__grace_sudoers_timeout_min(){
 	fi
 }
 
-declare -g sudo__grace_TIMESTAMP_TIMEOUT_REGEX='([-+]?[0-9]+)(\.([0-9]+))?'
+declare -g sudo__grace_TIMESTAMP_TIMEOUT_REGEX='((([-+])?([0-9]+))(\.([0-9]+))?|(([-+]?)\.([0-9]+)))'
 declare -g sudo__grace_SED_REGEX='s/^[[:space:]]*Defaults.+timestamp_timeout=('"$sudo__grace_TIMESTAMP_TIMEOUT_REGEX"')/\1/'
 
 sudo__grace_period_timeout_to_sec(){
@@ -384,23 +391,27 @@ sudo__grace_period_timeout_to_sec(){
 
 	local -r posNegIntPat='^'"$sudo__grace_TIMESTAMP_TIMEOUT_REGEX"'$'
 	if ! [[ $gracePeriod =~ $posNegIntPat ]]; then
-		sudo__grace_period_format_fail "$gracePeriodInMin" "$posNegIntPat"
+		sudo__grace_period_format_fail "$gracePeriod" "$posNegIntPat"
 		return 1
 	fi
-	local -ri timeoutInt=${BASH_REMATCH[1]}
-	local -ri timeoutDec=${BASH_REMATCH[3]}
-	local -i decimalPlaces=${#timeoutDec}
-	if [ $timeoutDec -lt 1 ]; then
-		decimalPlaces=1
+	if [ -n "${BASH_REMATCH[4]}" ] || [ -n "${BASH_REMATCH[6]}" ]; then
+		local -r  timeoutSign=${BASH_REMATCH[3]}
+		local -ri timeoutInt=${BASH_REMATCH[4]}
+		local -ri timeoutDec=${BASH_REMATCH[6]}
+	else
+		local -r  timeoutSign=${BASH_REMATCH[8]}
+		local -ri timeoutInt=0
+		local -ri timeoutDec=${BASH_REMATCH[9]}
 	fi
-	eval $timeOutRtn=\$\(\(timeoutInt\*60\+timeoutDec\*60\/\(10\*\*decimalPlaces\)\)\)
+	local -i decimalPlaces=${#timeoutDec}
+	eval $timeOutRtn=\$timeoutSign\$\(\(timeoutInt\*60\+timeoutDec\*60\/\(10\*\*decimalPlaces\)\)\)
 	return 0
 }
 
 sudo__grace_period_format_fail(){
 	local -r gracePeriod="$1"
 	local -r timeoutRegex="$2"
-  cat >&2 <<SUDO__GRACE_PERIOD_FORMAT_FAIL
+	cat >&2 <<SUDO__GRACE_PERIOD_FORMAT_FAIL
 
 Error: Specified grace period: '$gracePeriod' doesn't conform to sudo 'timestamp_timeout'
   +    format.  Must be in minutes and adhere to regex: '$timeoutRegex'.
