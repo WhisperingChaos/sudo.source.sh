@@ -9,17 +9,35 @@ config_executeable(){
 }
 
 test_sudo__grace_sudoers_timeout_min(){
-	assert_true '[ -z "$(echo | sudo__grace_sudoers_timeout_min)" ]'
-	assert_true '[ -z "$(echo "10_" | sudo__grace_sudoers_timeout_min)" ]'
+
+	assert_output_true test_sudo__grace_sudoers_timeout_min_value_invalid " " --- \
+		test_sudo__grace_sudoers_timeout_min_value_invalid_error ''
+	assert_output_true test_sudo__grace_sudoers_timeout_min_value_invalid "10_" --- \
+		test_sudo__grace_sudoers_timeout_min_value_invalid_error '10_'
 	assert_true '[ 600 == $(echo 10 | sudo__grace_sudoers_timeout_min) ]'
 	assert_true '[ -600 == $(echo -10 | sudo__grace_sudoers_timeout_min) ]'
 	assert_true '[ 600 == $(echo +10 | sudo__grace_sudoers_timeout_min) ]'
 	assert_true '[ -z "$(echo --10 | sudo__grace_sudoers_timeout_min)" ]'
 	assert_true '[ 150 == $(echo 2.5 | sudo__grace_sudoers_timeout_min) ]'
+	assert_true '[ 30 == $(echo .5 | sudo__grace_sudoers_timeout_min) ]'
+	assert_true '[ -30 == $(echo -.5 | sudo__grace_sudoers_timeout_min) ]'
 	assert_true '[ -60 == $(echo -1 | sudo__grace_sudoers_timeout_min) ]'
 	assert_true '[ 1200 == $( test_sudo__grace_sudoers_timeout_min_20 | sudo__grace_sudoers_timeout_min) ]'
 
 }
+
+test_sudo__grace_sudoers_timeout_min_value_invalid_error(){
+	cat <<TEST_SUDO__GRACE_SUDOERS_TIMEOUT_MIN_SPACE
+
+Error: Specified grace period: '$1' doesn't conform to sudo 'timestamp_timeout'
+  +    format.  Must be in minutes and adhere to regex: '^((([-+])?([0-9]+))(\.([0-9]+))?|(([-+]?)\.([0-9]+)))$'.
+TEST_SUDO__GRACE_SUDOERS_TIMEOUT_MIN_SPACE
+}
+
+test_sudo__grace_sudoers_timeout_min_value_invalid(){
+	echo "$1" | sudo__grace_sudoers_timeout_min
+}
+
 
 test_sudo__grace_sudoers_timeout_min_zero(){
 	echo -1
@@ -36,6 +54,7 @@ test_grace_period_system_get(){
 	assert_true '[ -z "$( sudo__grace_period_system_get "$PWD/file/GracePeriodSystem.Empty")" ]'
   assert_true '[ 600 == $( sudo__grace_period_system_get "$PWD/file/GracePeriodSystem.10min") ]'
   assert_true '[ 635 == $( sudo__grace_period_system_get "$PWD/file/GracePeriodSystem.10.599min") ]'
+  assert_true '[ 30 == $( sudo__grace_period_system_get "$PWD/file/GracePeriodSystem_.5min") ]'
   assert_true '[ -60 == $( sudo__grace_period_system_get "$PWD/file/GracePeriodSystem.TerminalSession") ]'
 }
 
@@ -58,11 +77,11 @@ test_sudo_grace_period_get()(
 	local -i gpRtn
 	# grace period not specified in any file :: should return the the well known system default
 	sudo__grace_period_get 'gpRtn' 2>/dev/null
-	assert_true "[ $? ]"
+	assert_true "[ $? == 0 ]"
 	assert_true '[ $sudo__grace_SUDOERS_GRACE_PERIOD_SYSTEM_DEFAULT_SEC == $gpRtn ]'
 	declare -g sudo__grace_SUDOERS_SETTINGS=./file/etc/sudoers.5Min
 	sudo__grace_period_get 'gpRtn'
-	assert_true "[ $? ]"
+	assert_true "[ $? == 0 ]"
 	assert_true '[ 300 == $gpRtn ]'
 	# Check the system's sudoers settings to verify permission esclation required to 
 	# read these files.
@@ -77,7 +96,7 @@ test_graceperiod_verify(){
 
 	local -i gpRtn
 	sudo__grace_period_get 'gpRtn'
-	assert_true "[ $? ]"
+	assert_true "[ $? == 0 ]"
 	# can't verify grace period if its infinite - also potential security risk
 	# abort to warn user
 	assert_true '[ $gpRtn -gt -1 ]'
@@ -93,7 +112,7 @@ test_graceperiod_reset(){
 	
 	local -i  gpRtn
 	sudo__grace_period_get 'gpRtn'
-	assert_true "[ $? ]"
+	assert_true "[ $? == 0 ]"
 	#  grace period is longer than potential timer resolution concerns
 	local -ri gpTestTrigSec=$sudo__GRACE_TRIGGER_HEARTBEAT_SEC
 	assert_true '[ $gpTestTrigSec -gt 1 ]'
@@ -122,7 +141,7 @@ test_sudo_elevate_periodic_timer(){
 	assert_true "[ $? == 0 ]"
 	local -i gpSec
 	sudo__grace_period_get 'gpSec'
-	assert_true "[ $? ]"
+	assert_true "[ $? == 0 ]"
 	local -r gpSec
 	assert_true '[ $gpSec -gt 0 ]'
 	local -ri expiredGracePeriod=gpSec+2
